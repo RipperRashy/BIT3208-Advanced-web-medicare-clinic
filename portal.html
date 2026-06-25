@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MediCare — My Portal</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .portal-wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
+    .portal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:28px; }
+    .portal-logo { display:flex; align-items:center; gap:10px; }
+    .portal-logo .logo-icon-sm { width:36px; height:36px; }
+    .portal-logo span { font-size:19px; font-weight:700; color:var(--gray-900); }
+    .welcome-card {
+      background: linear-gradient(135deg, #2563eb, #0891b2);
+      border-radius: var(--radius-lg);
+      padding: 28px 26px;
+      color: #fff;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .welcome-card h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .welcome-card p { font-size: 13.5px; opacity: 0.85; }
+    .welcome-card::after {
+      content: '+'; position:absolute; right:20px; top:-10px; font-size:120px; font-weight:200; opacity:0.12;
+    }
+    .portal-actions { display:flex; gap:12px; margin-bottom:24px; }
+    .portal-btn {
+      flex:1; background:#fff; border:1px solid var(--gray-200); border-radius:var(--radius-lg);
+      padding:18px; text-align:center; cursor:pointer; transition:all 0.2s; box-shadow:var(--shadow-sm);
+    }
+    .portal-btn:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+    .portal-btn svg { width:24px; height:24px; color:var(--blue); margin-bottom:8px; }
+    .portal-btn span { display:block; font-size:13px; font-weight:600; color:var(--gray-800); }
+  </style>
+</head>
+<body style="display:block; background:var(--gray-50);">
+  <div class="portal-wrap">
+    <div class="portal-header">
+      <div class="portal-logo">
+        <div class="logo-icon-sm" style="background:linear-gradient(135deg,#2563eb,#06b6d4);width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" style="width:18px;height:18px;"><path d="M12 4v16M4 12h16"/></svg>
+        </div>
+        <span>MediCare</span>
+      </div>
+      <button class="logout-btn" style="width:auto;padding:8px 16px;color:var(--gray-600);background:#fff;border:1px solid var(--gray-200);" onclick="logout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sign Out
+      </button>
+    </div>
+
+    <div class="welcome-card">
+      <h1 id="welcome-name">Welcome back!</h1>
+      <p id="membership-status">Loading your membership status...</p>
+    </div>
+
+    <div class="portal-actions">
+      <div class="portal-btn" onclick="openBookingModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span>Book Appointment</span>
+      </div>
+      <div class="portal-btn" onclick="document.getElementById('my-appointments-section').scrollIntoView({behavior:'smooth'})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>My Appointments</span>
+      </div>
+    </div>
+
+    <div class="card" id="my-appointments-section">
+      <div class="card-header">
+        <h2>My Appointment History</h2>
+        <span class="card-header-badge" id="appt-count-badge">0 total</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Doctor</th><th>Date</th><th>Time</th><th>Reason</th><th>Status</th></tr>
+          </thead>
+          <tbody id="my-appointments-tbody">
+            <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOOKING MODAL -->
+  <div id="modal-overlay" class="modal-overlay hidden" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>Book an Appointment</h2>
+        <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="supabase-config.js"></script>
+  <script>
+    let myPatientId = null;
+    let myEmail = null;
+
+    (async () => {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) { window.location.href = 'login.html'; return; }
+
+      const { data: profile } = await db.from('profiles').select('role, email').eq('id', session.user.id).single();
+      if (profile?.role && profile.role !== 'user') { window.location.href = 'index.html'; return; }
+
+      myEmail = session.user.email;
+      document.getElementById('welcome-name').textContent = 'Welcome, ' + myEmail.split('@')[0] + '!';
+
+      // Find or create matching patient record (linked by email)
+      let { data: patient } = await db.from('patients').select('*').eq('email', myEmail).maybeSingle();
+      if (!patient) {
+        const { data: created } = await db.from('patients').insert([{ full_name: myEmail.split('@')[0], email: myEmail }]).select().single();
+        patient = created;
+      }
+      myPatientId = patient.id;
+
+      loadMyAppointments();
+    })();
+
+    async function logout() {
+      await db.auth.signOut();
+      window.location.href = 'login.html';
+    }
+
+    function showToast(msg, type = 'success') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast ' + type;
+      setTimeout(() => t.className = 'toast hidden', 3000);
+    }
+
+    async function loadMyAppointments() {
+      const { data, error } = await db.from('appointments')
+        .select('*, doctors(full_name)')
+        .eq('patient_id', myPatientId)
+        .order('appointment_date', { ascending: false });
+
+      const tbody = document.getElementById('my-appointments-tbody');
+      const completedCount = (data || []).filter(a => a.status === 'Completed').length;
+      document.getElementById('appt-count-badge').textContent = (data?.length || 0) + ' total';
+
+      // Membership tier logic
+      const isPremium = completedCount >= 5;
+      document.getElementById('membership-status').innerHTML = isPremium
+        ? `⭐ <strong>Premium Member</strong> — you've completed ${completedCount} visits and enjoy a 15% discount on consultation fees.`
+        : `${completedCount} of 5 completed visits to unlock <strong>Premium Membership</strong> and a 15% discount.`;
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No appointments yet. Book your first one!</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.map(a => `
+        <tr>
+          <td><strong>${a.doctors?.full_name || '—'}</strong></td>
+          <td>${a.appointment_date}</td>
+          <td>${formatTime(a.appointment_time)}</td>
+          <td>${a.reason || '—'}</td>
+          <td><span class="badge badge-${a.status.toLowerCase()}">${a.status}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    async function openBookingModal() {
+      const { data: doctors } = await db.from('doctors').select('id, full_name, specialization').eq('available', true);
+      document.getElementById('modal-body').innerHTML = `
+        <div class="form">
+          <div class="form-group"><label>Choose Doctor *</label>
+            <select id="pf-doctor">
+              <option value="">Select a doctor</option>
+              ${(doctors || []).map(d => `<option value="${d.id}">${d.full_name} — ${d.specialization || 'General'}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Date *</label><input id="pf-date" type="date" min="${new Date().toISOString().slice(0,10)}" /></div>
+            <div class="form-group"><label>Time *</label><input id="pf-time" type="time" /></div>
+          </div>
+          <div class="form-group"><label>Reason for Visit</label><textarea id="pf-reason" placeholder="Briefly describe why you need to see the doctor"></textarea></div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+          <button class="btn-primary" onclick="submitMyAppointment()">Confirm Booking</button>
+        </div>
+      `;
+      document.getElementById('modal-overlay').classList.remove('hidden');
+    }
+
+    function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
+
+    async function submitMyAppointment() {
+      const doctor_id = document.getElementById('pf-doctor').value;
+      const appointment_date = document.getElementById('pf-date').value;
+      const appointment_time = document.getElementById('pf-time').value;
+      if (!doctor_id || !appointment_date || !appointment_time) { showToast('Please fill all required fields', 'error'); return; }
+
+      const due = new Date(appointment_date);
+      due.setDate(due.getDate() + 7);
+
+      const { error } = await db.from('appointments').insert([{
+        patient_id: myPatientId, doctor_id, appointment_date, appointment_time,
+        reason: document.getElementById('pf-reason').value.trim() || null,
+        due_date: due.toISOString().slice(0,10),
+        status: 'Scheduled'
+      }]);
+
+      if (error) { showToast('Failed to book: ' + error.message, 'error'); return; }
+      showToast('Appointment booked successfully!');
+      closeModal();
+      loadMyAppointments();
+    }
+
+    function formatTime(str) {
+      if (!str) return '—';
+      const [h, m] = str.split(':');
+      const hr = parseInt(h);
+      return `${hr % 12 || 12}:${m} ${hr < 12 ? 'AM' : 'PM'}`;
+    }
+  </script>
+</body>
+</html>

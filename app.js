@@ -1,17 +1,71 @@
-// ─── AUTH GUARD ───────────────────────────────────────────────────────────────
-// Check session on load — redirect to login if not authenticated
+// ─── AUTH GUARD + ROLE DETECTION ────────────────────────────────────────────
+let CURRENT_ROLE = 'user';
+
 (async () => {
   const { data: { session } } = await db.auth.getSession();
   if (!session) {
     window.location.href = 'login.html';
     return;
   }
-  // Show logged-in user email in sidebar
+
+  // Fetch role from profiles table
+  const { data: profile } = await db.from('profiles').select('role, email').eq('id', session.user.id).single();
+  CURRENT_ROLE = profile?.role || 'user';
+
+  // Users (patients) don't belong on the admin dashboard — send them to the portal
+  if (CURRENT_ROLE === 'user') {
+    window.location.href = 'portal.html';
+    return;
+  }
+
   const emailEl = document.getElementById('user-email');
   if (emailEl) emailEl.textContent = session.user.email;
-  // Now safe to load dashboard
+
+  const roleEl = document.getElementById('user-role-label');
+  if (roleEl) roleEl.textContent = CURRENT_ROLE === 'super_admin' ? 'Super Admin' : 'Clinic Admin';
+
+  applyRolePermissions();
   loadDashboard();
 })();
+
+// ─── ROLE-BASED UI CONTROL ───────────────────────────────────────────────────
+function applyRolePermissions() {
+  const isSuperAdmin = CURRENT_ROLE === 'super_admin';
+
+  // Only Super Admin sees Reports
+  const reportsNav = document.querySelector('.nav-item[data-page="reports"]');
+  if (reportsNav) reportsNav.style.display = isSuperAdmin ? '' : 'none';
+
+  // Only Super Admin can delete doctors or flag them; Admin can still add/toggle availability
+  document.body.classList.toggle('role-admin', CURRENT_ROLE === 'admin');
+  document.body.classList.toggle('role-super-admin', isSuperAdmin);
+
+  // Add a Super Admin only "Manage Admins" nav item dynamically
+  if (isSuperAdmin && !document.querySelector('.nav-item[data-page="admins"]')) {
+    const nav = document.querySelector('.sidebar-nav');
+    const label = document.createElement('p');
+    label.className = 'nav-label';
+    label.textContent = 'System';
+    const link = document.createElement('a');
+    link.href = '#';
+    link.className = 'nav-item';
+    link.dataset.page = 'admins';
+    link.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/><circle cx="19" cy="6" r="2"/></svg>
+      Manage Admins
+    `;
+    nav.appendChild(label);
+    nav.appendChild(link);
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      link.classList.add('active');
+      document.getElementById('page-admins').classList.add('active');
+      loadAdmins();
+    });
+  }
+}
 
 // ─── LOGOUT ──────────────────────────────────────────────────────────────────
 async function logout() {
@@ -32,6 +86,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (page === 'appointments') loadAppointments();
     if (page === 'doctors') loadDoctors();
     if (page === 'reports') loadReports();
+    if (page === 'admins') loadAdmins();
   });
 });
 
@@ -116,6 +171,7 @@ function renderPatients(patients) {
       <td>${formatDate(p.created_at)}</td>
       <td>
         <button class="action-btn" onclick="viewPatient('${p.id}')">View</button>
+        <button class="action-btn" onclick="editPatient('${p.id}')">Edit</button>
         <button class="action-btn danger" onclick="deletePatient('${p.id}')">Delete</button>
       </td>
     </tr>
@@ -161,6 +217,67 @@ async function viewPatient(id) {
     <div class="form-actions"><button class="btn-cancel" onclick="closeModal()">Close</button></div>
   `;
   document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+async function editPatient(id) {
+  const { data: p } = await db.from('patients').select('*').eq('id', id).single();
+  if (!p) return;
+  document.getElementById('modal-title').textContent = 'Edit Patient';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form">
+      <div class="form-row">
+        <div class="form-group"><label>Full Name *</label><input id="ef-name" value="${p.full_name || ''}" /></div>
+        <div class="form-group"><label>Gender</label>
+          <select id="ef-gender">
+            <option value="" ${!p.gender ? 'selected' : ''}>Select</option>
+            <option ${p.gender === 'Male' ? 'selected' : ''}>Male</option>
+            <option ${p.gender === 'Female' ? 'selected' : ''}>Female</option>
+            <option ${p.gender === 'Other' ? 'selected' : ''}>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Date of Birth</label><input id="ef-dob" type="date" value="${p.date_of_birth || ''}" /></div>
+        <div class="form-group"><label>Blood Group</label>
+          <select id="ef-blood">
+            <option value="" ${!p.blood_group ? 'selected' : ''}>Select</option>
+            ${['A+','A-','B+','B-','O+','O-','AB+','AB-'].map(b => `<option ${p.blood_group === b ? 'selected' : ''}>${b}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Phone</label><input id="ef-phone" value="${p.phone || ''}" /></div>
+        <div class="form-group"><label>Email</label><input id="ef-email" type="email" value="${p.email || ''}" /></div>
+      </div>
+      <div class="form-group"><label>Address</label><textarea id="ef-address">${p.address || ''}</textarea></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitPatientEdit('${p.id}')">Save Changes</button>
+    </div>
+  `;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+async function submitPatientEdit(id) {
+  const name = document.getElementById('ef-name').value.trim();
+  if (!name) { showToast('Full name is required', 'error'); return; }
+
+  const payload = {
+    full_name: name,
+    gender: document.getElementById('ef-gender').value || null,
+    date_of_birth: document.getElementById('ef-dob').value || null,
+    blood_group: document.getElementById('ef-blood').value || null,
+    phone: document.getElementById('ef-phone').value.trim() || null,
+    email: document.getElementById('ef-email').value.trim() || null,
+    address: document.getElementById('ef-address').value.trim() || null,
+  };
+
+  const { error } = await db.from('patients').update(payload).eq('id', id);
+  if (error) { showToast('Failed to update patient: ' + error.message, 'error'); return; }
+  showToast('Patient details updated');
+  closeModal();
+  loadPatients();
 }
 
 // ─── APPOINTMENTS ─────────────────────────────────────────────────────────────
@@ -215,6 +332,7 @@ async function loadDoctors() {
     grid.innerHTML = '<p class="empty-state">No doctors found. Add one to get started.</p>';
     return;
   }
+  const isSuperAdmin = CURRENT_ROLE === 'super_admin';
   grid.innerHTML = data.map(d => `
     <div class="doctor-card">
       <div class="doctor-avatar" style="${d.flagged ? 'background:linear-gradient(135deg,#fef2f2,#fecaca);color:#dc2626;' : ''}">${initials(d.full_name)}</div>
@@ -229,8 +347,10 @@ async function loadDoctors() {
         <span class="avail-badge" style="${d.available ? '' : 'background:#f1f5f9;color:#64748b;'}">${d.available ? '● Available' : '○ Unavailable'}</span>
         <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:4px;">
           <button class="action-btn" onclick="toggleAvailability('${d.id}', ${d.available})">${d.available ? 'Set Unavailable' : 'Set Available'}</button>
-          <button class="action-btn ${d.flagged ? 'success' : 'danger'}" onclick="toggleFlag('${d.id}', ${d.flagged || false})">${d.flagged ? 'Unflag' : 'Flag'}</button>
-          <button class="action-btn danger" onclick="deleteDoctor('${d.id}')">Delete</button>
+          ${isSuperAdmin ? `
+            <button class="action-btn ${d.flagged ? 'success' : 'danger'}" onclick="toggleFlag('${d.id}', ${d.flagged || false})">${d.flagged ? 'Unflag' : 'Flag'}</button>
+            <button class="action-btn danger" onclick="deleteDoctor('${d.id}')">Delete</button>
+          ` : ''}
         </div>
       </div>
     </div>
@@ -245,6 +365,7 @@ async function toggleAvailability(id, current) {
 }
 
 async function toggleFlag(id, current) {
+  if (CURRENT_ROLE !== 'super_admin') { showToast('Only Super Admin can flag doctors', 'error'); return; }
   const { error } = await db.from('doctors').update({ flagged: !current }).eq('id', id);
   if (error) { showToast('Failed to update', 'error'); return; }
   showToast(current ? 'Flag removed' : 'Doctor flagged for review');
@@ -252,6 +373,7 @@ async function toggleFlag(id, current) {
 }
 
 async function deleteDoctor(id) {
+  if (CURRENT_ROLE !== 'super_admin') { showToast('Only Super Admin can delete doctors', 'error'); return; }
   if (!confirm('Delete this doctor? This cannot be undone.')) return;
   const { error } = await db.from('doctors').delete().eq('id', id);
   if (error) { showToast('Failed to delete doctor', 'error'); return; }
@@ -303,6 +425,43 @@ async function submitDoctor() {
   closeModal();
   loadDoctors();
   loadDashboard();
+}
+
+// ─── ADMINS (SUPER ADMIN ONLY) ────────────────────────────────────────────────
+async function loadAdmins() {
+  const { data, error } = await db.from('profiles').select('*').order('email');
+  if (error) { showToast('Error loading admins', 'error'); return; }
+
+  const grid = document.getElementById('admins-grid');
+  if (!grid) return;
+
+  if (!data || data.length === 0) {
+    grid.innerHTML = '<p class="empty-state">No accounts found.</p>';
+    return;
+  }
+
+  grid.innerHTML = data.map(a => `
+    <div class="doctor-card">
+      <div class="doctor-avatar" style="${a.role === 'super_admin' ? 'background:linear-gradient(135deg,#fef9c3,#fde047);color:#854d0e;' : a.role === 'admin' ? 'background:linear-gradient(135deg,#dbeafe,#93c5fd);color:#1d4ed8;' : ''}">${initials(a.email)}</div>
+      <p class="doctor-name" style="word-break:break-all;font-size:13px;">${a.email}</p>
+      <span class="avail-badge" style="${a.role === 'super_admin' ? 'background:#fef9c3;color:#854d0e;' : a.role === 'admin' ? 'background:#dbeafe;color:#1d4ed8;' : 'background:#f1f5f9;color:#64748b;'}">
+        ${a.role === 'super_admin' ? '★ Super Admin' : a.role === 'admin' ? 'Admin' : 'User'}
+      </span>
+      <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
+        ${a.role !== 'super_admin' ? `
+          <button class="action-btn success" onclick="setRole('${a.id}','admin')">Make Admin</button>
+          <button class="action-btn" onclick="setRole('${a.id}','user')">Make User</button>
+        ` : '<span style="font-size:11px;color:#94a3b8;">Protected account</span>'}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function setRole(id, role) {
+  const { error } = await db.from('profiles').update({ role }).eq('id', id);
+  if (error) { showToast('Failed to update role', 'error'); return; }
+  showToast('Role updated successfully');
+  loadAdmins();
 }
 
 // ─── MODALS ───────────────────────────────────────────────────────────────────
@@ -448,7 +607,7 @@ function formatTime(str) {
 }
 
 function initials(name) {
-  return name.split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase();
+  return (name || '??').split(/[\s@]+/).slice(0,2).map(w => w[0]).join('').toUpperCase();
 }
 
 // ─── DATE CHIP ────────────────────────────────────────────────────────────────
@@ -479,7 +638,6 @@ async function loadReports() {
     db.from('appointments').select('*', { count: 'exact', head: true }).eq('appointment_date', today),
   ]);
 
-  // ── Summary stats
   const completed  = (appointments || []).filter(a => a.status === 'Completed').length;
   const scheduled  = (appointments || []).filter(a => a.status === 'Scheduled').length;
 
@@ -488,7 +646,6 @@ async function loadReports() {
   document.getElementById('r-scheduled').textContent      = scheduled;
   document.getElementById('r-today').textContent          = todayCount ?? 0;
 
-  // ── Chart colours
   const BLUE   = '#2563eb';
   const GREEN  = '#16a34a';
   const RED    = '#dc2626';
@@ -498,7 +655,6 @@ async function loadReports() {
   const PINK   = '#db2777';
   const YELLOW = '#ca8a04';
 
-  // ── 1. Status doughnut
   const statusCtx = document.getElementById('chart-status').getContext('2d');
   if (chartStatus) chartStatus.destroy();
   chartStatus = new Chart(statusCtx, {
@@ -518,14 +674,11 @@ async function loadReports() {
     },
     options: {
       responsive: true,
-      plugins: {
-        legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 16 } }
-      },
+      plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 16 } } },
       cutout: '65%',
     }
   });
 
-  // ── 2. Gender doughnut
   const genderCounts = { Male: 0, Female: 0, Other: 0 };
   (patients || []).forEach(p => {
     const g = p.gender || 'Other';
@@ -546,14 +699,11 @@ async function loadReports() {
     },
     options: {
       responsive: true,
-      plugins: {
-        legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 16 } }
-      },
+      plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 12 }, padding: 16 } } },
       cutout: '65%',
     }
   });
 
-  // ── 3. Appointments per doctor bar chart
   const doctorMap = {};
   (doctors || []).forEach(d => { doctorMap[d.id] = d.full_name; });
   const doctorCounts = {};
@@ -567,19 +717,11 @@ async function loadReports() {
     type: 'bar',
     data: {
       labels: Object.keys(doctorCounts),
-      datasets: [{
-        label: 'Appointments',
-        data: Object.values(doctorCounts),
-        backgroundColor: BLUE,
-        borderRadius: 6,
-        borderSkipped: false,
-      }]
+      datasets: [{ label: 'Appointments', data: Object.values(doctorCounts), backgroundColor: BLUE, borderRadius: 6, borderSkipped: false }]
     },
     options: {
       responsive: true,
-      plugins: {
-        legend: { display: false }
-      },
+      plugins: { legend: { display: false } },
       scales: {
         y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: 'Inter' } }, grid: { color: '#f1f5f9' } },
         x: { ticks: { font: { family: 'Inter' } }, grid: { display: false } }
@@ -587,7 +729,6 @@ async function loadReports() {
     }
   });
 
-  // ── 4. Blood group bar chart
   const bloodCounts = {};
   (patients || []).forEach(p => {
     const b = p.blood_group || 'Unknown';
@@ -600,13 +741,7 @@ async function loadReports() {
     type: 'bar',
     data: {
       labels: Object.keys(bloodCounts),
-      datasets: [{
-        label: 'Patients',
-        data: Object.values(bloodCounts),
-        backgroundColor: colors.slice(0, Object.keys(bloodCounts).length),
-        borderRadius: 6,
-        borderSkipped: false,
-      }]
+      datasets: [{ label: 'Patients', data: Object.values(bloodCounts), backgroundColor: colors.slice(0, Object.keys(bloodCounts).length), borderRadius: 6, borderSkipped: false }]
     },
     options: {
       responsive: true,
