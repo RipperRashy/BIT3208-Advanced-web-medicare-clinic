@@ -87,8 +87,20 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (page === 'doctors') loadDoctors();
     if (page === 'reports') loadReports();
     if (page === 'admins') loadAdmins();
+    closeMobileNav();
   });
 });
+
+// ─── MOBILE NAV TOGGLE ────────────────────────────────────────────────────────
+function toggleMobileNav() {
+  document.getElementById('sidebar')?.classList.toggle('mobile-open');
+  document.getElementById('sidebar-overlay')?.classList.toggle('show');
+}
+function closeMobileNav() {
+  document.getElementById('sidebar')?.classList.remove('mobile-open');
+  document.getElementById('sidebar-overlay')?.classList.remove('show');
+}
+
 
 // ─── TOAST ───────────────────────────────────────────────────────────────────
 function showToast(msg, type = 'success') {
