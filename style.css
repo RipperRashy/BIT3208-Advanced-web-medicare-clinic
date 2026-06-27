@@ -605,6 +605,7 @@ tbody tr:hover { background: var(--gray-50); }
 .portal-btn svg { width:24px; height:24px; color:var(--blue); margin-bottom:8px; }
 .portal-btn span { display:block; font-size:13px; font-weight:600; color:var(--gray-800); }
 
+/* ══════════════════════════════════════════════════════════════════════════
    RESPONSIVE DESIGN — Mobile-First Breakpoints
    Mobile: 0–767px | Tablet: 768–1023px | Laptop: 1024–1439px | Desktop: 1440px+
    ══════════════════════════════════════════════════════════════════════════ */
