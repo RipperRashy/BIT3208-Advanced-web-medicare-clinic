@@ -54,7 +54,10 @@
     .logo-icon svg { width:22px; height:22px; }
     .logo-text { font-size:24px; font-weight:700; color:#fff; letter-spacing:-0.5px; }
     .logo-text span { background:linear-gradient(90deg,#60a5fa,#22d3ee); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-    .card { background:rgba(255,255,255,0.045); backdrop-filter:blur(28px) saturate(140%); -webkit-backdrop-filter:blur(28px) saturate(140%); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:36px 32px 32px; box-shadow:0 30px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1); transition: transform 0.15s ease-out; will-change: transform; }
+    .card { background:rgba(255,255,255,0.045); backdrop-filter:blur(28px) saturate(140%); -webkit-backdrop-filter:blur(28px) saturate(140%); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:36px 32px 32px; box-shadow:0 30px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1); transition: transform 0.15s ease-out; will-change: transform; max-height: 88vh; overflow-y: auto; }
+    .card::-webkit-scrollbar { width: 6px; }
+    .card::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+    .wrapper { max-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
     .card-title { font-size:22px; font-weight:700; color:#fff; margin-bottom:6px; letter-spacing:-0.3px; }
     .card-sub { font-size:13.5px; color:rgba(255,255,255,0.45); margin-bottom:28px; font-weight:400; }
     .tabs { display:flex; background:rgba(255,255,255,0.06); border-radius:10px; padding:4px; margin-bottom:24px; gap:4px; }
