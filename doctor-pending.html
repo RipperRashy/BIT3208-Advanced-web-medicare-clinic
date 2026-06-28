@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MediCare — Pending Approval</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Inter',sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0f172a; }
+    .card { background:rgba(255,255,255,0.05); backdrop-filter:blur(24px); border:1px solid rgba(255,255,255,0.12); border-radius:20px; padding:40px 36px; max-width:420px; text-align:center; box-shadow:0 25px 50px rgba(0,0,0,0.4); }
+    .icon { width:60px; height:60px; margin:0 auto 20px; background:linear-gradient(135deg,#f59e0b,#d97706); border-radius:50%; display:flex; align-items:center; justify-content:center; }
+    .icon svg { width:28px; height:28px; color:#fff; }
+    h1 { color:#fff; font-size:20px; margin-bottom:10px; }
+    p { color:rgba(255,255,255,0.6); font-size:13.5px; line-height:1.6; margin-bottom:24px; }
+    button { background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:#fff; padding:10px 20px; border-radius:9px; cursor:pointer; font-family:'Inter',sans-serif; font-size:13.5px; font-weight:600; }
+    button:hover { background:rgba(255,255,255,0.14); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </div>
+    <h1>Awaiting Approval</h1>
+    <p>Your doctor account has been submitted and is pending review by a clinic administrator. You'll be able to sign in to your doctor portal once approved. Please check back later.</p>
+    <button onclick="logout()">Sign Out</button>
+  </div>
+  <script src="supabase-config.js"></script>
+  <script>
+    (async () => {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) { window.location.href = 'login.html'; return; }
+      const { data: profile } = await db.from('profiles').select('role').eq('id', session.user.id).single();
+      if (profile?.role === 'doctor') window.location.href = 'doctor-portal.html';
+      if (profile?.role === 'user') window.location.href = 'portal.html';
+      if (profile?.role === 'admin' || profile?.role === 'super_admin') window.location.href = 'index.html';
+    })();
+    async function logout() {
+      await db.auth.signOut();
+      window.location.href = 'login.html';
+    }
+  </script>
+</body>
+</html>

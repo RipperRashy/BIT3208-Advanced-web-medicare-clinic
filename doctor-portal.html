@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MediCare — Doctor Portal</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .portal-wrap { max-width: 1000px; }
+    .msg-card {
+      background:#fff; border:1px solid var(--gray-200); border-radius:var(--radius);
+      padding:14px 16px; margin-bottom:10px; position:relative;
+    }
+    .msg-card.unread { border-left: 3px solid var(--blue); background: var(--blue-light); }
+    .msg-subject { font-weight:700; font-size:13.5px; color:var(--gray-800); }
+    .msg-meta { font-size:11.5px; color:var(--gray-400); margin:2px 0 8px; }
+    .msg-body { font-size:13px; color:var(--gray-700); line-height:1.5; }
+    .news-card {
+      background:#fff; border:1px solid var(--gray-200); border-radius:var(--radius);
+      padding:14px 16px; margin-bottom:10px;
+    }
+    .news-title { font-weight:700; font-size:13.5px; color:var(--gray-800); }
+    .news-meta { font-size:11px; color:var(--gray-400); margin:2px 0 8px; }
+    .news-body { font-size:13px; color:var(--gray-700); line-height:1.5; }
+    .portal-tabs { display:flex; gap:8px; margin-bottom:18px; border-bottom:1px solid var(--gray-200); }
+    .portal-tab { padding:10px 16px; font-size:13px; font-weight:600; color:var(--gray-400); cursor:pointer; border-bottom:2px solid transparent; }
+    .portal-tab.active { color:var(--blue); border-bottom-color:var(--blue); }
+  </style>
+</head>
+<body style="display:block; background:var(--gray-50);">
+  <button class="mobile-nav-toggle" style="display:none;"></button>
+  <div class="portal-wrap">
+    <div class="portal-header">
+      <div class="portal-logo">
+        <div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" style="width:18px;height:18px;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <span>MediCare Doctor Portal</span>
+      </div>
+      <button class="logout-btn" style="width:auto;padding:8px 16px;color:var(--gray-600);background:#fff;border:1px solid var(--gray-200);" onclick="logout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Sign Out
+      </button>
+    </div>
+
+    <div class="welcome-card" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);">
+      <h1 id="welcome-name">Welcome, Doctor!</h1>
+      <p id="welcome-spec">Loading your profile...</p>
+    </div>
+
+    <div class="portal-tabs">
+      <div class="portal-tab active" data-tab="appointments" onclick="switchPortalTab('appointments')">My Appointments</div>
+      <div class="portal-tab" data-tab="messages" onclick="switchPortalTab('messages')">
+        Messages <span id="unread-badge" style="display:none;background:#dc2626;color:#fff;border-radius:20px;padding:1px 7px;font-size:10.5px;margin-left:4px;">0</span>
+      </div>
+      <div class="portal-tab" data-tab="news" onclick="switchPortalTab('news')">News &amp; Memos</div>
+    </div>
+
+    <div id="tab-appointments" class="portal-tab-content">
+      <div class="card">
+        <div class="card-header">
+          <h2>My Appointments</h2>
+          <span class="card-header-badge" id="appt-count-badge">0 total</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Patient</th><th>Date</th><th>Time</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="doc-appointments-tbody"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-messages" class="portal-tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header"><h2>Messages from Administration</h2></div>
+        <div id="messages-list" style="padding:14px;"><p class="empty-state">Loading...</p></div>
+      </div>
+    </div>
+
+    <div id="tab-news" class="portal-tab-content" style="display:none;">
+      <div class="card">
+        <div class="card-header"><h2>Hospital News &amp; Memos</h2></div>
+        <div id="news-list" style="padding:14px;"><p class="empty-state">Loading...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="supabase-config.js"></script>
+  <script>
+    let myDoctorId = null;
+
+    (async () => {
+      const { data: { session } } = await db.auth.getSession();
+      if (!session) { window.location.href = 'login.html'; return; }
+
+      const { data: profile } = await db.from('profiles').select('role').eq('id', session.user.id).single();
+      if (profile?.role === 'doctor_pending') { window.location.href = 'doctor-pending.html'; return; }
+      if (profile?.role !== 'doctor') { window.location.href = 'index.html'; return; }
+
+      const { data: doctor } = await db.from('doctors').select('*').eq('auth_user_id', session.user.id).single();
+      if (!doctor) { showToast('Doctor profile not found', 'error'); return; }
+      myDoctorId = doctor.id;
+
+      document.getElementById('welcome-name').textContent = 'Welcome, ' + doctor.full_name + '!';
+      document.getElementById('welcome-spec').textContent = doctor.specialization || 'General Practice';
+
+      loadDoctorAppointments();
+      loadMessages();
+      loadNews();
+    })();
+
+    async function logout() {
+      await db.auth.signOut();
+      window.location.href = 'login.html';
+    }
+
+    function showToast(msg, type = 'success') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast ' + type;
+      setTimeout(() => t.className = 'toast hidden', 3000);
+    }
+
+    function switchPortalTab(tab) {
+      document.querySelectorAll('.portal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      document.querySelectorAll('.portal-tab-content').forEach(c => c.style.display = 'none');
+      document.getElementById('tab-' + tab).style.display = 'block';
+    }
+
+    async function loadDoctorAppointments() {
+      const { data, error } = await db.from('appointments')
+        .select('*, patients(full_name, phone)')
+        .eq('doctor_id', myDoctorId)
+        .order('appointment_date', { ascending: false });
+
+      const tbody = document.getElementById('doc-appointments-tbody');
+      document.getElementById('appt-count-badge').textContent = (data?.length || 0) + ' total';
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No appointments assigned yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.map(a => `
+        <tr>
+          <td><strong>${a.patients?.full_name || '—'}</strong></td>
+          <td>${a.appointment_date}</td>
+          <td>${formatTime(a.appointment_time)}</td>
+          <td>${a.reason || '—'}</td>
+          <td><span class="badge badge-${a.status.toLowerCase()}">${a.status}</span></td>
+          <td>
+            ${a.status === 'Scheduled' ? `<button class="action-btn success" onclick="markComplete('${a.id}')">Mark Complete</button>` : '—'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function markComplete(id) {
+      const { error } = await db.from('appointments').update({ status: 'Completed' }).eq('id', id);
+      if (error) { showToast('Failed to update', 'error'); return; }
+      showToast('Appointment marked complete');
+      loadDoctorAppointments();
+    }
+
+    async function loadMessages() {
+      const { data, error } = await db.from('messages')
+        .select('*')
+        .or(`recipient_doctor_id.eq.${myDoctorId},recipient_doctor_id.is.null`)
+        .order('created_at', { ascending: false });
+
+      const list = document.getElementById('messages-list');
+      const unread = (data || []).filter(m => !m.is_read).length;
+      const badge = document.getElementById('unread-badge');
+      if (unread > 0) { badge.style.display = 'inline-block'; badge.textContent = unread; }
+
+      if (!data || data.length === 0) {
+        list.innerHTML = '<p class="empty-state">No messages yet.</p>';
+        return;
+      }
+      list.innerHTML = data.map(m => `
+        <div class="msg-card ${m.is_read ? '' : 'unread'}" onclick="markMessageRead('${m.id}')">
+          <div class="msg-subject">${m.recipient_doctor_id ? '' : '📢 '}${m.subject}</div>
+          <div class="msg-meta">${m.recipient_doctor_id ? 'Direct message' : 'Broadcast to all doctors'} · ${formatDate(m.created_at)} · From ${m.sender_email || 'Administration'}</div>
+          <div class="msg-body">${m.body}</div>
+        </div>
+      `).join('');
+    }
+
+    async function markMessageRead(id) {
+      await db.from('messages').update({ is_read: true }).eq('id', id);
+      loadMessages();
+    }
+
+    async function loadNews() {
+      const { data, error } = await db.from('announcements').select('*').order('created_at', { ascending: false });
+      const list = document.getElementById('news-list');
+      if (!data || data.length === 0) {
+        list.innerHTML = '<p class="empty-state">No announcements yet.</p>';
+        return;
+      }
+      list.innerHTML = data.map(n => `
+        <div class="news-card">
+          <div class="news-title">📌 ${n.title}</div>
+          <div class="news-meta">${formatDate(n.created_at)} · Posted by ${n.posted_by || 'Administration'}</div>
+          <div class="news-body">${n.body}</div>
+        </div>
+      `).join('');
+    }
+
+    function formatTime(str) {
+      if (!str) return '—';
+      const [h, m] = str.split(':');
+      const hr = parseInt(h);
+      return `${hr % 12 || 12}:${m} ${hr < 12 ? 'AM' : 'PM'}`;
+    }
+    function formatDate(str) {
+      if (!str) return '—';
+      return new Date(str).toLocaleDateString('en-KE', { day:'2-digit', month:'short', year:'numeric' });
+    }
+  </script>
+</body>
+</html>

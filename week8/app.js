@@ -46,53 +46,23 @@ function applyRolePermissions() {
     const label = document.createElement('p');
     label.className = 'nav-label';
     label.textContent = 'System';
-    nav.appendChild(label);
-
-    const items = [
-      { page: 'admins', text: 'Manage Admins', icon: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/><circle cx="19" cy="6" r="2"/>', loader: 'loadAdmins' },
-      { page: 'pending-doctors', text: 'Pending Doctors', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', loader: 'loadPendingDoctors' },
-      { page: 'messages', text: 'Send Messages', icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', loader: 'loadMessageCenter' },
-      { page: 'news', text: 'News & Memos', icon: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>', loader: 'loadNewsManager' },
-    ];
-
-    items.forEach(it => {
-      const link = document.createElement('a');
-      link.href = '#';
-      link.className = 'nav-item';
-      link.dataset.page = it.page;
-      link.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${it.icon}</svg>${it.text}`;
-      nav.appendChild(link);
-      link.addEventListener('click', e => {
-        e.preventDefault();
-        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        link.classList.add('active');
-        document.getElementById('page-' + it.page).classList.add('active');
-        window[it.loader]();
-        closeMobileNav();
-      });
-    });
-  } else if (CURRENT_ROLE === 'admin' && !document.querySelector('.nav-item[data-page="news"]')) {
-    // Regular Admin gets only News & Memos (read + post), not full system controls
-    const nav = document.querySelector('.sidebar-nav');
-    const label = document.createElement('p');
-    label.className = 'nav-label';
-    label.textContent = 'Communication';
-    nav.appendChild(label);
     const link = document.createElement('a');
     link.href = '#';
     link.className = 'nav-item';
-    link.dataset.page = 'news';
-    link.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg>News & Memos`;
+    link.dataset.page = 'admins';
+    link.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/><circle cx="19" cy="6" r="2"/></svg>
+      Manage Admins
+    `;
+    nav.appendChild(label);
     nav.appendChild(link);
     link.addEventListener('click', e => {
       e.preventDefault();
       document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       link.classList.add('active');
-      document.getElementById('page-news').classList.add('active');
-      loadNewsManager();
-      closeMobileNav();
+      document.getElementById('page-admins').classList.add('active');
+      loadAdmins();
     });
   }
 }
@@ -184,22 +154,6 @@ async function loadDashboard() {
         <span class="avail-badge">Available</span>
       </div>
     `).join('');
-  }
-
-  const { data: news } = await db.from('announcements').select('*').order('created_at', { ascending: false }).limit(3);
-  const newsEl = document.getElementById('dash-news-list');
-  if (newsEl) {
-    if (!news || news.length === 0) {
-      newsEl.innerHTML = '<p class="empty-state">No announcements posted yet.</p>';
-    } else {
-      newsEl.innerHTML = news.map(n => `
-        <div style="padding:8px 0;border-bottom:1px solid var(--gray-100);">
-          <strong style="font-size:13px;">📌 ${n.title}</strong>
-          <p style="font-size:11px;color:var(--gray-400);margin:2px 0 4px;">${formatDate(n.created_at)}</p>
-          <p style="font-size:12.5px;color:var(--gray-600);">${n.body}</p>
-        </div>
-      `).join('');
-    }
   }
 }
 
@@ -520,151 +474,6 @@ async function setRole(id, role) {
   if (error) { showToast('Failed to update role', 'error'); return; }
   showToast('Role updated successfully');
   loadAdmins();
-}
-
-// ─── PENDING DOCTORS (SUPER ADMIN ONLY) ──────────────────────────────────────
-async function loadPendingDoctors() {
-  const { data, error } = await db.from('doctors').select('*').eq('approved', false).order('full_name');
-  const grid = document.getElementById('pending-doctors-grid');
-  if (!grid) return;
-
-  if (error) { showToast('Error loading pending doctors', 'error'); return; }
-  if (!data || data.length === 0) {
-    grid.innerHTML = '<p class="empty-state">No pending doctor applications.</p>';
-    return;
-  }
-  grid.innerHTML = data.map(d => `
-    <div class="doctor-card">
-      <div class="doctor-avatar" style="background:linear-gradient(135deg,#fef9c3,#fde047);color:#854d0e;">${initials(d.full_name)}</div>
-      <p class="doctor-name">${d.full_name}</p>
-      <p class="doctor-spec">${d.specialization || 'Not specified'}</p>
-      <div class="doctor-info"><span>✉️ ${d.email || '—'}</span></div>
-      <span class="avail-badge" style="background:#fef9c3;color:#854d0e;">Pending Review</span>
-      <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
-        <button class="action-btn success" onclick="approveDoctor('${d.id}','${d.auth_user_id}')">Approve</button>
-        <button class="action-btn danger" onclick="rejectDoctor('${d.id}','${d.auth_user_id}')">Reject</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-async function approveDoctor(doctorId, authUserId) {
-  const { error: e1 } = await db.from('doctors').update({ approved: true, available: true }).eq('id', doctorId);
-  const { error: e2 } = await db.from('profiles').update({ role: 'doctor' }).eq('id', authUserId);
-  if (e1 || e2) { showToast('Failed to approve doctor', 'error'); return; }
-  showToast('Doctor approved successfully!');
-  loadPendingDoctors();
-  loadDoctors();
-}
-
-async function rejectDoctor(doctorId, authUserId) {
-  if (!confirm('Reject and remove this doctor application?')) return;
-  await db.from('doctors').delete().eq('id', doctorId);
-  await db.from('profiles').update({ role: 'user' }).eq('id', authUserId);
-  showToast('Application rejected');
-  loadPendingDoctors();
-}
-
-// ─── MESSAGE CENTER (SUPER ADMIN ONLY) ───────────────────────────────────────
-async function loadMessageCenter() {
-  const container = document.getElementById('message-center-body');
-  if (!container) return;
-
-  const { data: doctors } = await db.from('doctors').select('id, full_name').eq('approved', true).order('full_name');
-  const { data: sentMessages } = await db.from('messages').select('*, doctors(full_name)').order('created_at', { ascending: false }).limit(20);
-
-  container.innerHTML = `
-    <div class="form" style="padding:0;">
-      <div class="form-group"><label>Send To</label>
-        <select id="msg-recipient">
-          <option value="">📢 Broadcast to all doctors</option>
-          ${(doctors || []).map(d => `<option value="${d.id}">${d.full_name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group"><label>Subject *</label><input id="msg-subject" placeholder="e.g. Schedule change this week" /></div>
-      <div class="form-group"><label>Message *</label><textarea id="msg-body" placeholder="Write your message here..." style="min-height:100px;"></textarea></div>
-      <button class="btn-primary" style="align-self:flex-start;" onclick="sendMessage()">Send Message</button>
-    </div>
-    <div style="margin-top:24px;">
-      <p style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">Recently Sent</p>
-      ${(sentMessages || []).length === 0 ? '<p class="empty-state">No messages sent yet.</p>' :
-        sentMessages.map(m => `
-          <div style="padding:10px 14px;border:1px solid var(--gray-200);border-radius:9px;margin-bottom:8px;">
-            <strong style="font-size:13px;">${m.subject}</strong>
-            <p style="font-size:11.5px;color:var(--gray-400);margin:2px 0 6px;">To: ${m.doctors?.full_name || 'All Doctors'} · ${formatDate(m.created_at)}</p>
-            <p style="font-size:12.5px;color:var(--gray-600);">${m.body}</p>
-          </div>
-        `).join('')
-      }
-    </div>
-  `;
-}
-
-async function sendMessage() {
-  const recipient = document.getElementById('msg-recipient').value || null;
-  const subject = document.getElementById('msg-subject').value.trim();
-  const body = document.getElementById('msg-body').value.trim();
-  if (!subject || !body) { showToast('Subject and message are required', 'error'); return; }
-
-  const { data: { session } } = await db.auth.getSession();
-  const { error } = await db.from('messages').insert([{
-    recipient_doctor_id: recipient,
-    sender_email: session?.user?.email || 'Administration',
-    subject, body, is_read: false
-  }]);
-  if (error) { showToast('Failed to send: ' + error.message, 'error'); return; }
-  showToast(recipient ? 'Message sent to doctor!' : 'Broadcast sent to all doctors!');
-  loadMessageCenter();
-}
-
-// ─── NEWS / MEMO WALL (ADMIN + SUPER ADMIN) ──────────────────────────────────
-async function loadNewsManager() {
-  const container = document.getElementById('news-manager-body');
-  if (!container) return;
-
-  const { data: announcements } = await db.from('announcements').select('*').order('created_at', { ascending: false });
-
-  container.innerHTML = `
-    <div class="form" style="padding:0;">
-      <div class="form-group"><label>Title *</label><input id="news-title" placeholder="e.g. New parking arrangement" /></div>
-      <div class="form-group"><label>Details *</label><textarea id="news-body" placeholder="Write the announcement..." style="min-height:90px;"></textarea></div>
-      <button class="btn-primary" style="align-self:flex-start;" onclick="postAnnouncement()">Post Announcement</button>
-    </div>
-    <div style="margin-top:24px;">
-      <p style="font-size:11px;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">All Announcements</p>
-      ${(announcements || []).length === 0 ? '<p class="empty-state">No announcements posted yet.</p>' :
-        announcements.map(n => `
-          <div style="padding:12px 14px;border:1px solid var(--gray-200);border-radius:9px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-            <div>
-              <strong style="font-size:13px;">📌 ${n.title}</strong>
-              <p style="font-size:11.5px;color:var(--gray-400);margin:2px 0 6px;">${formatDate(n.created_at)} · ${n.posted_by || 'Administration'}</p>
-              <p style="font-size:12.5px;color:var(--gray-600);">${n.body}</p>
-            </div>
-            <button class="action-btn danger" onclick="deleteAnnouncement('${n.id}')">Delete</button>
-          </div>
-        `).join('')
-      }
-    </div>
-  `;
-}
-
-async function postAnnouncement() {
-  const title = document.getElementById('news-title').value.trim();
-  const body = document.getElementById('news-body').value.trim();
-  if (!title || !body) { showToast('Title and details are required', 'error'); return; }
-
-  const { data: { session } } = await db.auth.getSession();
-  const { error } = await db.from('announcements').insert([{ title, body, posted_by: session?.user?.email || 'Administration' }]);
-  if (error) { showToast('Failed to post: ' + error.message, 'error'); return; }
-  showToast('Announcement posted!');
-  loadNewsManager();
-}
-
-async function deleteAnnouncement(id) {
-  if (!confirm('Delete this announcement?')) return;
-  await db.from('announcements').delete().eq('id', id);
-  showToast('Announcement deleted');
-  loadNewsManager();
 }
 
 // ─── MODALS ───────────────────────────────────────────────────────────────────

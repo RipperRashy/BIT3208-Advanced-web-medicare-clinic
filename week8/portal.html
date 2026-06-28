@@ -83,11 +83,6 @@
         </table>
       </div>
     </div>
-
-    <div class="card" style="margin-top:18px;">
-      <div class="card-header"><h2>Latest Hospital News</h2></div>
-      <div id="news-list" style="padding:14px;"><p class="empty-state">Loading...</p></div>
-    </div>
   </div>
 
   <!-- BOOKING MODAL -->
@@ -127,7 +122,6 @@
       myPatientId = patient.id;
 
       loadMyAppointments();
-      loadPortalNews();
     })();
 
     async function logout() {
@@ -219,22 +213,6 @@
       showToast('Appointment booked successfully!');
       closeModal();
       loadMyAppointments();
-    }
-
-    async function loadPortalNews() {
-      const { data } = await db.from('announcements').select('*').order('created_at', { ascending: false }).limit(5);
-      const list = document.getElementById('news-list');
-      if (!data || data.length === 0) {
-        list.innerHTML = '<p class="empty-state">No announcements yet.</p>';
-        return;
-      }
-      list.innerHTML = data.map(n => `
-        <div style="padding:10px 0;border-bottom:1px solid var(--gray-100);">
-          <strong style="font-size:13px;">📌 ${n.title}</strong>
-          <p style="font-size:11px;color:var(--gray-400);margin:2px 0 4px;">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'2-digit',month:'short',year:'numeric'})}</p>
-          <p style="font-size:12.5px;color:var(--gray-600);">${n.body}</p>
-        </div>
-      `).join('');
     }
 
     function formatTime(str) {

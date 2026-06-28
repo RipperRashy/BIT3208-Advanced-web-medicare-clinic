@@ -62,8 +62,7 @@
       <p class="card-sub" id="card-sub">Sign in to access your account</p>
       <div class="tabs">
         <button class="tab active" id="tab-login" onclick="switchTab('login')">Sign In</button>
-        <button class="tab" id="tab-signup" onclick="switchTab('signup')">Patient Sign Up</button>
-        <button class="tab" id="tab-doctor" onclick="switchTab('doctor')">Doctor Sign Up</button>
+        <button class="tab" id="tab-signup" onclick="switchTab('signup')">Create Account</button>
       </div>
       <div class="error-msg" id="error-msg"></div>
       <div class="success-msg" id="success-msg"></div>
@@ -81,20 +80,6 @@
           <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
         </div>
       </div>
-      <div class="form-group" id="doctor-fields" style="display:none;">
-        <label>Full Name (e.g. Dr. Jane Odhiambo)</label>
-        <div class="input-wrap">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          <input type="text" id="doctor-name" placeholder="Dr. Jane Odhiambo" />
-        </div>
-      </div>
-      <div class="form-group" id="doctor-spec-field" style="display:none;">
-        <label>Specialization</label>
-        <div class="input-wrap">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/></svg>
-          <input type="text" id="doctor-spec" placeholder="e.g. Pediatrics, Cardiology" />
-        </div>
-      </div>
       <button class="btn" id="submit-btn" onclick="handleSubmit()">Sign In</button>
       <p class="role-note">Patients can create an account here to book appointments.<br>Clinic staff sign in with their existing admin account.</p>
     </div>
@@ -110,10 +95,7 @@
     async function redirectByRole(userId) {
       const { data: profile } = await auth.from('profiles').select('role').eq('id', userId).single();
       const role = profile?.role || 'user';
-      if (role === 'user') window.location.href = 'portal.html';
-      else if (role === 'doctor') window.location.href = 'doctor-portal.html';
-      else if (role === 'doctor_pending') window.location.href = 'doctor-pending.html';
-      else window.location.href = 'index.html';
+      window.location.href = (role === 'user') ? 'portal.html' : 'index.html';
     }
 
     auth.auth.getSession().then(({ data: { session } }) => {
@@ -124,18 +106,9 @@
       mode = tab;
       document.getElementById('tab-login').classList.toggle('active', tab === 'login');
       document.getElementById('tab-signup').classList.toggle('active', tab === 'signup');
-      document.getElementById('tab-doctor').classList.toggle('active', tab === 'doctor');
-      document.getElementById('doctor-fields').style.display = tab === 'doctor' ? 'block' : 'none';
-      document.getElementById('doctor-spec-field').style.display = tab === 'doctor' ? 'block' : 'none';
-      const titles = { login: 'Welcome back', signup: 'Create account', doctor: 'Doctor registration' };
-      const subs = {
-        login: 'Sign in to access your account',
-        signup: 'Register as a patient to book appointments',
-        doctor: 'Submit your details for admin approval'
-      };
-      document.getElementById('card-title').textContent = titles[tab];
-      document.getElementById('card-sub').textContent = subs[tab];
-      document.getElementById('submit-btn').textContent = tab === 'login' ? 'Sign In' : (tab === 'doctor' ? 'Submit for Approval' : 'Create Account');
+      document.getElementById('submit-btn').textContent = tab === 'login' ? 'Sign In' : 'Create Account';
+      document.getElementById('card-title').textContent = tab === 'login' ? 'Welcome back' : 'Create account';
+      document.getElementById('card-sub').textContent = tab === 'login' ? 'Sign in to access your account' : 'Register as a patient to book appointments';
       clearFeedback();
     }
     function showError(msg) { document.getElementById('error-msg').textContent = msg; document.getElementById('error-msg').classList.add('show'); document.getElementById('success-msg').classList.remove('show'); }
@@ -152,13 +125,7 @@
       const email = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
       if (!email || !password) { showError('Please enter your email and password.'); return; }
-      if ((mode === 'signup' || mode === 'doctor') && password.length < 6) { showError('Password must be at least 6 characters.'); return; }
-
-      if (mode === 'doctor') {
-        const docName = document.getElementById('doctor-name').value.trim();
-        if (!docName) { showError('Please enter your full name.'); return; }
-      }
-
+      if (mode === 'signup' && password.length < 6) { showError('Password must be at least 6 characters.'); return; }
       setLoading(true);
 
       if (mode === 'login') {
@@ -169,38 +136,17 @@
         } else {
           redirectByRole(data.user.id);
         }
-      } else if (mode === 'signup') {
+      } else {
         const { data, error } = await auth.auth.signUp({ email, password });
         if (error) {
           showError(error.message);
           setLoading(false);
         } else {
+          // Create profile row with default role 'user' (patient)
           if (data.user) {
             await auth.from('profiles').insert([{ id: data.user.id, email, role: 'user' }]);
           }
           showSuccess('Account created! You can now sign in.');
-          setLoading(false);
-        }
-      } else if (mode === 'doctor') {
-        const docName = document.getElementById('doctor-name').value.trim();
-        const docSpec = document.getElementById('doctor-spec').value.trim();
-        const { data, error } = await auth.auth.signUp({ email, password });
-        if (error) {
-          showError(error.message);
-          setLoading(false);
-        } else {
-          if (data.user) {
-            await auth.from('profiles').insert([{ id: data.user.id, email, role: 'doctor_pending' }]);
-            await auth.from('doctors').insert([{
-              full_name: docName,
-              specialization: docSpec || null,
-              email,
-              available: false,
-              approved: false,
-              auth_user_id: data.user.id
-            }]);
-          }
-          showSuccess('Registration submitted! An administrator will review and approve your account.');
           setLoading(false);
         }
       }
